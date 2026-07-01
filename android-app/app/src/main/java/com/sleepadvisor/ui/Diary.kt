@@ -365,14 +365,14 @@ fun SleepDiaryForm(
                 }
             } else {
                 diaries.forEach { d ->
-                    val dateVal = d.get("date")?.asString ?: ""
-                    val bedVal = d.get("bed_time")?.asString ?: ""
-                    val outVal = d.get("out_of_bed_time")?.asString ?: ""
+                    val dateVal = d.get("date")?.let { if (it.isJsonNull) "" else it.asString } ?: ""
+                    val bedVal = d.get("bed_time")?.let { if (it.isJsonNull) "23:00" else it.asString } ?: "23:00"
+                    val outVal = d.get("out_of_bed_time")?.let { if (it.isJsonNull) "06:45" else it.asString } ?: "06:45"
                     val lightVal = d.get("light_out_time")?.let { if (it.isJsonNull) "" else it.asString } ?: ""
-                    val latencyVal = d.get("latency_mins")?.asInt ?: 0
-                    val awakeVal = d.get("awake_mins")?.asInt ?: 0
-                    val awakeningsVal = d.get("awakenings")?.asInt ?: 0
-                    val qualityVal = d.get("quality")?.asInt ?: 3
+                    val latencyVal = d.get("latency_mins")?.let { if (it.isJsonNull) 0 else it.asInt } ?: 0
+                    val awakeVal = d.get("awake_mins")?.let { if (it.isJsonNull) 0 else it.asInt } ?: 0
+                    val awakeningsVal = d.get("awakenings")?.let { if (it.isJsonNull) 0 else it.asInt } ?: 0
+                    val qualityVal = d.get("quality")?.let { if (it.isJsonNull) 3 else it.asInt } ?: 3
                     val wakeVal = d.get("wake_time")?.let { if (it.isJsonNull) "" else it.asString } ?: ""
                     val alertnessVal = d.get("alertness")?.let { if (it.isJsonNull) 3 else it.asInt } ?: 3
                     val medicationsVal = d.get("medications")?.let { if (it.isJsonNull) "" else it.asString } ?: ""
