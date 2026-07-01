@@ -49,6 +49,11 @@ class SpeechTTS(
 
     private fun cleanMarkdown(text: String): String {
         var clean = text
+        // Remove HTML/XML tags
+        clean = clean.replace(Regex("<[^>]*>"), " ")
+        // Remove standalone < and > punctuation
+        clean = clean.replace("<", " ")
+        clean = clean.replace(">", " ")
         // Replace bullet points at the beginning of lines/paragraphs with spaces
         clean = clean.replace(Regex("(?m)^\\s*[-*+]\\s+"), " ")
         // Remove bold/italic markup symbols
