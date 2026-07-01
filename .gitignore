@@ -7,14 +7,11 @@
 google-services.json
 local.properties
 android-app/app/src/main/java/com/sleepadvisor/data/ApiKey.kt
-frontend/public/env.js
 
 # Build and Compilation Outputs
 build/
 android-app/build/
 android-app/app/build/
-dist/
-node_modules/
 .gradle/
 android-app/.gradle/
 .kotlin/
