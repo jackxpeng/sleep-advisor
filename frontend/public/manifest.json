@@ -1,0 +1,17 @@
+{
+  "short_name": "SleepAdvisor",
+  "name": "AI Sleep Advisor",
+  "description": "Your CBT-I sleep companion and long-term sleep coach.",
+  "icons": [
+    {
+      "src": "sleep_logo.png",
+      "type": "image/png",
+      "sizes": "1024x1024"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#080c21",
+  "theme_color": "#0d112d",
+  "display": "standalone",
+  "orientation": "portrait"
+}

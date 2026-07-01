@@ -1,0 +1,33 @@
+# Secrets and Environment Variables
+.env
+.env.local
+.env.*.local
+*.keystore
+*.jks
+google-services.json
+local.properties
+android-app/app/src/main/java/com/sleepadvisor/data/ApiKey.kt
+frontend/public/env.js
+
+# Build and Compilation Outputs
+build/
+android-app/build/
+android-app/app/build/
+dist/
+node_modules/
+.gradle/
+android-app/.gradle/
+.kotlin/
+android-app/.kotlin/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+.DS_Store
+Thumbs.db
