@@ -67,12 +67,22 @@ data class SleepDiary(
         }
     }
 }
-
 private fun timeDiffMins(start: String, end: String): Int {
-    val (sh, sm) = start.split(":").map { it.toInt() }
-    val (eh, em) = end.split(":").map { it.toInt() }
-    val startMins = sh * 60 + sm
-    val endMins = eh * 60 + em
-    val diff = endMins - startMins
-    return if (diff < 0) diff + 24 * 60 else diff
+    try {
+        val startParts = start.split(":")
+        val endParts = end.split(":")
+        if (startParts.size != 2 || endParts.size != 2) return 0
+        
+        val sh = startParts[0].trim().toIntOrNull() ?: return 0
+        val sm = startParts[1].trim().toIntOrNull() ?: return 0
+        val eh = endParts[0].trim().toIntOrNull() ?: return 0
+        val em = endParts[1].trim().toIntOrNull() ?: return 0
+        
+        val startMins = sh * 60 + sm
+        val endMins = eh * 60 + em
+        val diff = endMins - startMins
+        return if (diff < 0) diff + 24 * 60 else diff
+    } catch (e: Exception) {
+        return 0
+    }
 }
