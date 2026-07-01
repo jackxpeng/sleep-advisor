@@ -38,7 +38,6 @@ import androidx.core.content.ContextCompat
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.sleepadvisor.agent.SleepAgent
 import com.sleepadvisor.data.Preferences
 import com.sleepadvisor.speech.SpeechSTT
 import com.sleepadvisor.speech.SpeechTTS
@@ -56,13 +55,15 @@ fun VoiceChat(
     val coroutineScope = rememberCoroutineScope()
     val gson = Gson()
 
-    var isListening by remember { mutableStateOf(false) }
-    var status by remember { mutableStateOf("idle") } // "idle", "listening", "thinking", "speaking"
-    var messages by remember { mutableStateOf(listOf<ChatMsg>()) }
-    var inputText by remember { mutableStateOf("") }
+    val viewModel: com.sleepadvisor.ui.viewmodel.VoiceChatViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+
+    val messages by viewModel.messages.collectAsState()
+    val status by viewModel.status.collectAsState()
+    val isVoiceModeActive by viewModel.isVoiceModeActive.collectAsState()
+    val inputText by viewModel.inputText.collectAsState()
+    val rmsDb by viewModel.rmsDb.collectAsState()
+
     var showKeyboard by remember { mutableStateOf(false) }
-    var isVoiceModeActive by remember { mutableStateOf(false) }
-    
     val listState = rememberLazyListState()
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -70,34 +71,13 @@ fun VoiceChat(
     var speechTTS by remember { mutableStateOf<SpeechTTS?>(null) }
     var speechSTT by remember { mutableStateOf<SpeechSTT?>(null) }
 
-    // Helper to reload messages
-    fun reloadHistory() {
-        val historyJson = Preferences.getString(context, Preferences.KEY_CHAT_HISTORY, "[]")
-        try {
-            val arr = gson.fromJson(historyJson, JsonArray::class.java) ?: JsonArray()
-            val list = mutableListOf<ChatMsg>()
-            for (i in 0 until arr.size()) {
-                val item = arr.get(i).asJsonObject
-                list.add(
-                    ChatMsg(
-                        sender = item.get("sender").asString,
-                        message = item.get("message").asString
-                    )
-                )
-            }
-            messages = list
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-    }
-
     // Initialize TTS
     DisposableEffect(Unit) {
         speechTTS = SpeechTTS(
             context = context,
-            onStart = { status = "speaking" },
+            onStart = { viewModel.setStatus("speaking") },
             onDone = {
-                status = "idle"
+                viewModel.setStatus("idle")
                 if (isVoiceModeActive) {
                     coroutineScope.launch {
                         speechSTT?.startListening()
@@ -105,11 +85,10 @@ fun VoiceChat(
                 }
             },
             onError = { err ->
-                status = "idle"
+                viewModel.setStatus("idle")
                 println("TTS Error: $err")
             }
         )
-        reloadHistory()
 
         onDispose {
             speechTTS?.shutdown()
@@ -134,61 +113,58 @@ fun VoiceChat(
     // Run Agent logic in Background
     val handleSendMsg: (String) -> Unit = { text ->
         if (text.trim().isNotEmpty()) {
-            if (status == "speaking") {
-                speechTTS?.stop()
+            if (speechTTS?.isSpeaking() == true) {
+                speechTTS?.stopAndNotify()
             }
-            status = "thinking"
-            inputText = ""
             keyboardController?.hide()
-            
-            // Add user message optimistically
-            val userMsg = ChatMsg("user", text)
-            messages = messages + userMsg
-
-            coroutineScope.launch(Dispatchers.IO) {
-                val reply = SleepAgent.runAgentTurn(context, text) {
-                    coroutineScope.launch(Dispatchers.Main) {
-                        onStateChange()
-                    }
-                }
-                
-                withContext(Dispatchers.Main) {
-                    reloadHistory()
-                    speakText(reply)
-                }
+            viewModel.sendMessage(text) { reply ->
+                speakText(reply)
             }
         }
     }
 
-    // Initialize STT
+    // Initialize STT and enable barge-in
     LaunchedEffect(isVoiceModeActive) {
-        speechSTT = SpeechSTT(
-            context = context,
-            onStart = {
-                isListening = true
-                status = "listening"
-            },
-            onEnd = {
-                isListening = false
-                if (status == "listening") {
-                    status = "idle"
+        if (isVoiceModeActive) {
+            speechSTT = SpeechSTT(
+                context = context,
+                onStart = {
+                    viewModel.setStatus("listening")
+                },
+                onEnd = {
+                    if (viewModel.status.value == "listening") {
+                        viewModel.setStatus("idle")
+                    }
+                },
+                onResult = { result ->
+                    if (result.trim().isNotEmpty()) {
+                        handleSendMsg(result)
+                    }
+                },
+                onPartial = { partial ->
+                    // Barge-in: if the user interrupts while TTS is speaking, immediately stop TTS
+                    if (speechTTS?.isSpeaking() == true) {
+                        speechTTS?.stopAndNotify()
+                    }
+                    viewModel.setInputText(partial)
+                },
+                onError = { err ->
+                    viewModel.setStatus("idle")
+                    println("STT Error: $err")
+                },
+                onRmsChanged = { rms ->
+                    viewModel.setRmsDb(rms)
                 }
-            },
-            onResult = { result ->
-                if (result.trim().isNotEmpty()) {
-                    handleSendMsg(result)
-                }
-            },
-            onPartial = { partial ->
-                inputText = partial
-                showKeyboard = true
-            },
-            onError = { err ->
-                isListening = false
-                status = "idle"
-                println("STT Error: $err")
+            )
+            speechSTT?.startListening()
+        } else {
+            speechSTT?.stopListening()
+            speechSTT = null
+            viewModel.setRmsDb(0f)
+            if (viewModel.status.value == "listening") {
+                viewModel.setStatus("idle")
             }
-        )
+        }
     }
 
     // Permissions check & launcher
@@ -196,10 +172,9 @@ fun VoiceChat(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            isVoiceModeActive = true
-            speechSTT?.startListening()
+            viewModel.setVoiceModeActive(true)
         } else {
-            isVoiceModeActive = false
+            viewModel.setVoiceModeActive(false)
             println("Microphone permission denied")
         }
     }
@@ -212,14 +187,10 @@ fun VoiceChat(
 
         if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
             if (isVoiceModeActive) {
-                isVoiceModeActive = false
-                speechSTT?.stopListening()
-                isListening = false
-                status = "idle"
+                viewModel.setVoiceModeActive(false)
             } else {
-                isVoiceModeActive = true
                 speechTTS?.stop()
-                speechSTT?.startListening()
+                viewModel.setVoiceModeActive(true)
             }
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
@@ -227,8 +198,7 @@ fun VoiceChat(
     }
 
     val handleClearHistory = {
-        Preferences.clearChatHistory(context)
-        reloadHistory()
+        viewModel.clearHistory()
         onStateChange()
     }
 
@@ -330,6 +300,20 @@ fun VoiceChat(
                     val orbSize = if (messages.isEmpty()) 140.dp else 90.dp
                     val iconSize = if (messages.isEmpty()) 38.dp else 26.dp
 
+                    val glowColors = when (status) {
+                        "listening" -> listOf(Color(0xFFFFD700), Color(0xFFFF8F00), BgDark)
+                        "thinking" -> listOf(Color(0xFF8A4FFF), PurpleGlow, BgDark)
+                        "speaking" -> listOf(Color(0xFFB5A6FF), Purple, BgDark)
+                        else -> listOf(Color(0xFFB388FF), Color(0xFF6200EA), BgDark)
+                    }
+
+                    val ringColor = when (status) {
+                        "listening" -> Gold
+                        "thinking" -> Purple
+                        "speaking" -> Purple
+                        else -> Color.White.copy(alpha = 0.15f)
+                    }
+
                     // Pulsing Orb Drawing
                     Box(
                         modifier = Modifier
@@ -339,12 +323,7 @@ fun VoiceChat(
                             .clickable { toggleMic() }
                             .background(
                                 Brush.radialGradient(
-                                    colors = when (status) {
-                                        "listening" -> listOf(Color(0xFFFFD700), Color(0xFFFF8F00), BgDark)
-                                        "thinking" -> listOf(Color(0xFF8A4FFF), PurpleGlow, BgDark)
-                                        "speaking" -> listOf(Color(0xFFB5A6FF), Purple, BgDark)
-                                        else -> listOf(Color(0xFFB388FF), Color(0xFF6200EA), BgDark)
-                                    }
+                                    colors = glowColors
                                 )
                             ),
                         contentAlignment = Alignment.Center
@@ -352,12 +331,7 @@ fun VoiceChat(
                         // Outer glow canvas ring
                         Canvas(modifier = Modifier.fillMaxSize()) {
                             drawCircle(
-                                color = when (status) {
-                                    "listening" -> Gold
-                                    "thinking" -> Purple
-                                    "speaking" -> Purple
-                                    else -> Color.White.copy(alpha = 0.15f)
-                                },
+                                color = ringColor,
                                 radius = (size.minDimension / 2f) * pulseScale,
                                 style = Stroke(width = 2.dp.toPx())
                             )
@@ -377,7 +351,7 @@ fun VoiceChat(
                     }
 
                     // Waveform animations
-                    AnimatedWaveform(isActive = status == "speaking" || status == "listening")
+                    AnimatedWaveform(rmsDb = rmsDb, status = status)
 
                     Text(
                         text = when (status) {
@@ -437,7 +411,7 @@ fun VoiceChat(
             ) {
                 TextField(
                     value = inputText,
-                    onValueChange = { inputText = it },
+                    onValueChange = { viewModel.setInputText(it) },
                     placeholder = { Text(text = "Type your message here...", color = TextSecondary, fontSize = 14.sp) },
                     colors = TextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
@@ -468,11 +442,8 @@ fun VoiceChat(
         }
     }
 }
-
-data class ChatMsg(val sender: String, val message: String)
-
 @Composable
-fun ChatBubble(msg: ChatMsg, onSpeak: () -> Unit) {
+fun ChatBubble(msg: com.sleepadvisor.domain.model.ChatMessage, onSpeak: () -> Unit) {
     val isUser = msg.sender == "user"
     Box(
         modifier = Modifier.fillMaxWidth(),
@@ -524,38 +495,44 @@ fun ChatBubble(msg: ChatMsg, onSpeak: () -> Unit) {
 }
 
 @Composable
-fun AnimatedWaveform(isActive: Boolean) {
-    val infiniteTransition = rememberInfiniteTransition(label = "wave")
-    val waveHeights = List(7) { index ->
-        infiniteTransition.animateFloat(
-            initialValue = 8f,
-            targetValue = if (isActive) 35f else 8f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(
-                    durationMillis = 600,
-                    delayMillis = index * 100,
-                    easing = FastOutSlowInEasing
-                ),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "bar_$index"
-        )
+fun AnimatedWaveform(rmsDb: Float, status: String) {
+    val bars = remember { mutableStateListOf(8f, 8f, 8f, 8f, 8f, 8f, 8f, 8f, 8f) }
+    
+    LaunchedEffect(rmsDb, status) {
+        if (status == "listening") {
+            val height = (rmsDb + 2f).coerceAtLeast(0f) * 4f + 8f
+            bars.removeAt(0)
+            bars.add(height.coerceIn(8f, 50f))
+        } else if (status == "speaking") {
+            // Give a soft speaking animation wave
+            for (i in 0 until bars.size) {
+                bars[i] = (12f + Math.sin((System.currentTimeMillis() / 150.0) + i).toFloat() * 10f).coerceAtLeast(8f)
+            }
+        } else {
+            for (i in 0 until bars.size) {
+                bars[i] = 8f
+            }
+        }
     }
 
     Row(
         modifier = Modifier
-            .height(40.dp)
+            .height(55.dp)
             .padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        waveHeights.forEach { height ->
+        bars.forEach { h ->
+            val animatedHeight by animateFloatAsState(
+                targetValue = h,
+                animationSpec = spring(dampingRatio = 0.6f, stiffness = 400f)
+            )
             Box(
                 modifier = Modifier
-                    .width(4.dp)
-                    .height(height.value.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(if (isActive) Gold else Purple)
+                    .width(5.dp)
+                    .height(animatedHeight.dp)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(if (status == "listening") Gold else Purple)
             )
         }
     }

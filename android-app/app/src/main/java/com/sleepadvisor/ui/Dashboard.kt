@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.sp
 import com.google.gson.Gson
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import com.sleepadvisor.agent.SleepAgent
 import com.sleepadvisor.data.Preferences
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -37,87 +36,31 @@ fun Dashboard(
     onNavigate: (String) -> Unit,
     revision: Int
 ) {
-    val context = LocalContext.current
-    val gson = Gson()
+    val viewModel: com.sleepadvisor.ui.viewmodel.DashboardViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     
-    // Parse stats
-    var totalLogs by remember { mutableStateOf(0) }
-    var avgEfficiency by remember { mutableStateOf(0.0) }
-    var avgDurationMins by remember { mutableStateOf(0) }
-    var avgLatency by remember { mutableStateOf(0) }
-    
-    // Checklist state
-    var diaryDoneToday by remember { mutableStateOf(false) }
-    var relaxationDoneToday by remember { mutableStateOf(false) }
-    
-    // CBT Week
-    var cbtWeek by remember { mutableStateOf(-1) }
+    val sleepStats by viewModel.sleepStats.collectAsState()
+    val cbtWeek by viewModel.cbtWeek.collectAsState()
+    val diaryDoneToday by viewModel.isDiaryDoneToday.collectAsState()
+    val relaxationDoneToday by viewModel.isBreathingDoneToday.collectAsState()
+    val progressPercentState by viewModel.progressPercent.collectAsState()
 
     LaunchedEffect(revision) {
-        // Calculate sleep stats
-        val statsString = SleepAgent.calculateSleepStats(context)
-        try {
-            val statsObj = gson.fromJson(statsString, JsonObject::class.java)
-            totalLogs = statsObj.get("total_logs")?.asInt ?: 0
-            avgEfficiency = statsObj.get("average_efficiency")?.asDouble ?: 0.0
-            avgDurationMins = statsObj.get("average_duration_mins")?.asInt ?: 0
-            avgLatency = statsObj.get("average_latency_mins")?.asInt ?: 0
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-
-        // CBT Week
-        cbtWeek = try {
-            Preferences.getString(context, Preferences.KEY_CBT_WEEK, "-1").toInt()
-        } catch (e: Exception) {
-            -1
-        }
-
-        // Today strings
-        val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-        
-        // Check diary
-        val diariesJson = Preferences.getString(context, Preferences.KEY_DIARIES, "[]")
-        val diariesArray = gson.fromJson(diariesJson, JsonArray::class.java) ?: JsonArray()
-        var diaryDone = false
-        for (i in 0 until diariesArray.size()) {
-            val d = diariesArray.get(i).asJsonObject
-            if (d.get("date")?.asString == todayStr) {
-                diaryDone = true
-                break
-            }
-        }
-        diaryDoneToday = diaryDone
-
-        // Check relaxation
-        relaxationDoneToday = Preferences.getString(context, "relaxation_done_$todayStr", "false") == "true"
+        viewModel.reloadDashboard()
     }
 
-    val weekName = when (cbtWeek) {
-        -1 -> "Initial Interview"
-        0 -> "Baseline Logging"
-        1 -> "Week 1: Changing Thoughts"
-        2 -> "Week 2: Establishing Habits"
-        3 -> "Week 3: Lifestyle & Environment"
-        4 -> "Week 4: Relaxation Response"
-        5 -> "Week 5: Thinking Away Stress"
-        6 -> "Week 6: Developing Attitudes"
-        else -> "CBT Maintenance"
-    }
+    val totalLogs = sleepStats.totalLogs
+    val avgEfficiency = sleepStats.avgEfficiency
+    val avgDurationMins = sleepStats.avgDurationMins.toInt()
+    val avgLatency = sleepStats.avgLatencyMins.toInt()
 
-    val weekInstructions = when (cbtWeek) {
-        -1 -> "Engage in the voice chat to complete your initial sleep profile. Let's outline your goals."
-        0 -> "Log your sleep diary every morning. We need 7 days of logs to calculate your average sleep duration and efficiency."
-        1 -> "Read about sleep physiology. Identify your Negative Sleep Thoughts (NSTs) and replace them with Positive Sleep Thoughts (PSTs). Remember: you don't need 8 hours!"
-        2 -> "Enforce sleep restriction! Limit your time in bed to your average sleep duration. Rise at the exact same time every day. No naps, and get out of bed if awake for 20 minutes."
-        3 -> "Expose yourself to morning bright light. Exercise for 20-30 minutes in the late afternoon. Complete caffeine cutoff by 12:00 PM, and avoid alcohol/nicotine."
-        4 -> "Practice the Relaxation Response. Use the breathing exercise tool in the Relaxation Room for 15-20 minutes every afternoon or before bed."
-        5 -> "Challenge stressful daytime thinking. Reframe your daytime negative self-talk and write down worries in a journal long before bedtime."
-        6 -> "Adopt sleep-resilient attitudes. Maintain consistency, commit to your sleep restriction windows, and view challenges as opportunities."
-        else -> "Maintain your consistent rise times, sleep-promoting habits, and relaxation techniques."
-    }
+    val weekName = cbtWeek.displayName
+    val weekInstructions = cbtWeek.instructions
 
-    val progressPercent = ((cbtWeek + 1).toDouble() / 7.0 * 100.0).coerceIn(0.0, 100.0).toInt()
+    // checklist progress is 0, 50, or 100
+    val checklistProgressPercent = (progressPercentState * 100).toInt()
+
+    // overall week progress is (weekNum + 1) / 8 * 100
+    val progressPercent = ((cbtWeek.weekNum + 1).toDouble() / 8.0 * 100.0).coerceIn(0.0, 100.0).toInt()
 
     fun formatMinsToHours(totalMins: Int): String {
         if (totalMins <= 0) return "0 hrs"
@@ -163,7 +106,7 @@ fun Dashboard(
                 }
                 
                 Text(
-                    text = if (cbtWeek == -1) "Interview" else if (cbtWeek == 0) "Baseline" else "Week $cbtWeek/6",
+                    text = if (cbtWeek.weekNum == -1) "Interview" else if (cbtWeek.weekNum == 0) "Baseline" else "Week ${cbtWeek.weekNum}/6",
                     color = Gold,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.ExtraBold
@@ -179,7 +122,7 @@ fun Dashboard(
                 lineHeight = 18.sp
             )
             
-            if (cbtWeek == -1) {
+            if (cbtWeek.weekNum == -1) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Button(
                     onClick = { onNavigate("chat") },

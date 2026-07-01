@@ -29,6 +29,8 @@ class SpeechTTS(
         }
     }
 
+    private var cachedVoice: android.speech.tts.Voice? = null
+
     private fun setupProgressListener() {
         tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
@@ -71,36 +73,37 @@ class SpeechTTS(
             setSpeechRate(rate)
             setPitch(pitch)
             
-            // Try to set a male voice if available
-            val voices = voices
-            if (!voices.isNullOrEmpty()) {
-                val maleVoice = voices.find { voice ->
-                    val name = voice.name.lowercase()
-                    val isEnglish = voice.locale.language == "en"
-                    isEnglish && (
-                        name.contains("male") ||
-                        name.contains("x-iom") || // US Male
-                        name.contains("x-iol") || // US Male
-                        name.contains("x-tpf") || // US Male
-                        name.contains("x-rjs") || // UK Male
-                        name.contains("x-gdo") || // UK Male
-                        name.contains("x-kdf") || // UK Male
-                        name.contains("x-ere") || // India Male
-                        name.contains("x-djd")    // Australia Male
-                    )
-                }
-                if (maleVoice != null) {
-                    voice = maleVoice
-                } else {
-                    // Fallback to any English voice that has "male" in name
-                    val fallbackMale = voices.find { voice ->
-                        voice.locale.language == "en" && voice.name.lowercase().contains("male")
+            // Try to set a male voice if available and not cached yet
+            if (cachedVoice == null) {
+                val voicesList = voices
+                if (!voicesList.isNullOrEmpty()) {
+                    val maleVoice = voicesList.find { voice ->
+                        val name = voice.name.lowercase()
+                        val isEnglish = voice.locale.language == "en"
+                        isEnglish && (
+                            name.contains("male") ||
+                            name.contains("x-iom") || // US Male
+                            name.contains("x-iol") || // US Male
+                            name.contains("x-tpf") || // US Male
+                            name.contains("x-rjs") || // UK Male
+                            name.contains("x-gdo") || // UK Male
+                            name.contains("x-kdf") || // UK Male
+                            name.contains("x-ere") || // India Male
+                            name.contains("x-djd")    // Australia Male
+                        )
                     }
-                    if (fallbackMale != null) {
-                        voice = fallbackMale
+                    if (maleVoice != null) {
+                        cachedVoice = maleVoice
+                    } else {
+                        // Fallback to any English voice that has "male" in name
+                        cachedVoice = voicesList.find { voice ->
+                            voice.locale.language == "en" && voice.name.lowercase().contains("male")
+                        }
                     }
                 }
             }
+
+            cachedVoice?.let { voice = it }
 
             val params = android.os.Bundle()
             params.putString(TextToSpeech.Engine.KEY_PARAM_UTTERANCE_ID, "advisor_speech")
@@ -108,9 +111,20 @@ class SpeechTTS(
         }
     }
 
+    fun isSpeaking(): Boolean {
+        return isInitialized && tts?.isSpeaking == true
+    }
+
     fun stop() {
         if (isInitialized) {
             tts?.stop()
+        }
+    }
+
+    fun stopAndNotify() {
+        if (isInitialized) {
+            tts?.stop()
+            onDone()
         }
     }
 

@@ -37,27 +37,17 @@ fun MemoryInspector(
     val context = LocalContext.current
     val gson = Gson()
 
+    val memoryRepo = remember { com.sleepadvisor.data.MemoryRepository(context) }
+    
     var humanMemory by remember { mutableStateOf("{}") }
     var personaMemory by remember { mutableStateOf("{}") }
     var archivalMemories by remember { mutableStateOf(listOf<JsonObject>()) }
     var newFact by remember { mutableStateOf("") }
 
     fun loadMemory() {
-        humanMemory = Preferences.getString(context, Preferences.KEY_HUMAN_MEMORY, "{}")
-        personaMemory = Preferences.getString(context, Preferences.KEY_PERSONA_MEMORY, "{}")
-        val archivalJson = Preferences.getString(context, Preferences.KEY_ARCHIVAL_MEMORIES, "[]")
-        try {
-            val arr = gson.fromJson(archivalJson, JsonArray::class.java) ?: JsonArray()
-            val list = mutableListOf<JsonObject>()
-            for (i in 0 until arr.size()) {
-                list.add(arr.get(i).asJsonObject)
-            }
-            // Sort by created date descending (newest first)
-            list.sortByDescending { it.get("created_at")?.asString }
-            archivalMemories = list
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        humanMemory = memoryRepo.getHumanMemory()
+        personaMemory = memoryRepo.getPersonaMemory()
+        archivalMemories = memoryRepo.getArchivalMemories()
     }
 
     LaunchedEffect(revision) {
@@ -66,14 +56,7 @@ fun MemoryInspector(
 
     val handleAddFact = {
         if (newFact.trim().isNotEmpty()) {
-            val archivalJson = Preferences.getString(context, Preferences.KEY_ARCHIVAL_MEMORIES, "[]")
-            val arr = gson.fromJson(archivalJson, JsonArray::class.java) ?: JsonArray()
-            val item = JsonObject().apply {
-                addProperty("content", newFact.trim())
-                addProperty("created_at", SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).format(Date()))
-            }
-            arr.add(item)
-            Preferences.putString(context, Preferences.KEY_ARCHIVAL_MEMORIES, gson.toJson(arr))
+            memoryRepo.insertArchival(newFact.trim())
             newFact = ""
             loadMemory()
             onUpdate()
@@ -82,15 +65,10 @@ fun MemoryInspector(
     }
 
     val handleDeleteFact: (Int) -> Unit = { index ->
-        val archivalJson = Preferences.getString(context, Preferences.KEY_ARCHIVAL_MEMORIES, "[]")
-        val arr = gson.fromJson(archivalJson, JsonArray::class.java) ?: JsonArray()
-        if (index >= 0 && index < arr.size()) {
-            arr.remove(index)
-            Preferences.putString(context, Preferences.KEY_ARCHIVAL_MEMORIES, gson.toJson(arr))
-            loadMemory()
-            onUpdate()
-            Toast.makeText(context, "Fact deleted.", Toast.LENGTH_SHORT).show()
-        }
+        memoryRepo.deleteArchival(index)
+        loadMemory()
+        onUpdate()
+        Toast.makeText(context, "Fact deleted.", Toast.LENGTH_SHORT).show()
     }
 
     fun formatTimestamp(isoStr: String): String {
@@ -100,7 +78,14 @@ fun MemoryInspector(
             val formatter = SimpleDateFormat("MM/dd/yyyy hh:mm a", Locale.US)
             formatter.format(dateObj)
         } catch (e: Exception) {
-            isoStr
+            try {
+                val parser2 = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+                val dateObj = parser2.parse(isoStr) ?: Date()
+                val formatter = SimpleDateFormat("MM/dd/yyyy hh:mm a", Locale.US)
+                formatter.format(dateObj)
+            } catch (e2: Exception) {
+                isoStr
+            }
         }
     }
 

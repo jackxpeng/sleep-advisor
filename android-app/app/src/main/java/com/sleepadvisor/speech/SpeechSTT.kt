@@ -14,7 +14,8 @@ class SpeechSTT(
     private val onEnd: () -> Unit,
     private val onResult: (String) -> Unit,
     private val onPartial: (String) -> Unit,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    private val onRmsChanged: (Float) -> Unit = {}
 ) {
     private var speechRecognizer: SpeechRecognizer? = null
 
@@ -34,7 +35,9 @@ class SpeechSTT(
 
                 override fun onBeginningOfSpeech() {}
 
-                override fun onRmsChanged(rmsdB: Float) {}
+                override fun onRmsChanged(rmsdB: Float) {
+                    this@SpeechSTT.onRmsChanged(rmsdB)
+                }
 
                 override fun onBufferReceived(buffer: ByteArray?) {}
 

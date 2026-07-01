@@ -37,35 +37,43 @@ fun Settings(
     val context = LocalContext.current
     val gson = Gson()
 
+    val viewModel: com.sleepadvisor.ui.viewmodel.SettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+
+    val initialApiKey by viewModel.apiKey.collectAsState()
+    val initialVoiceRate by viewModel.voiceRate.collectAsState()
+    val initialVoicePitch by viewModel.voicePitch.collectAsState()
+
     var apiKey by remember { mutableStateOf("") }
     var showKey by remember { mutableStateOf(false) }
     var voiceRate by remember { mutableStateOf(1.0f) }
     var voicePitch by remember { mutableStateOf(0.9f) }
+
+    // Sync from ViewModel
+    LaunchedEffect(initialApiKey, initialVoiceRate, initialVoicePitch) {
+        apiKey = initialApiKey
+        voiceRate = initialVoiceRate
+        voicePitch = initialVoicePitch
+    }
 
     // TTS engine for testing
     var ttsTest by remember { mutableStateOf<SpeechTTS?>(null) }
 
     DisposableEffect(Unit) {
         ttsTest = SpeechTTS(context)
-        
-        apiKey = Preferences.getString(context, Preferences.KEY_API_KEY)
-        voiceRate = Preferences.getString(context, Preferences.KEY_VOICE_RATE, "1.0").toFloatOrNull() ?: 1.0f
-        voicePitch = Preferences.getString(context, Preferences.KEY_VOICE_PITCH, "0.9").toFloatOrNull() ?: 0.9f
-
         onDispose {
             ttsTest?.shutdown()
         }
     }
 
     val handleSaveKey = {
-        Preferences.putString(context, Preferences.KEY_API_KEY, apiKey.trim())
+        viewModel.setApiKey(apiKey.trim())
         Toast.makeText(context, "API Key updated successfully.", Toast.LENGTH_SHORT).show()
         onUpdate()
     }
 
     val handleSaveVoiceSettings = {
-        Preferences.putString(context, Preferences.KEY_VOICE_RATE, voiceRate.toString())
-        Preferences.putString(context, Preferences.KEY_VOICE_PITCH, voicePitch.toString())
+        viewModel.setVoiceRate(voiceRate)
+        viewModel.setVoicePitch(voicePitch)
         Toast.makeText(context, "Voice settings updated.", Toast.LENGTH_SHORT).show()
     }
 
@@ -78,145 +86,16 @@ fun Settings(
     }
 
     val handleResetData = {
-        // Just clear the preferences values and re-initialize
-        Preferences.putString(context, Preferences.KEY_API_KEY, "")
-        Preferences.putString(context, Preferences.KEY_HUMAN_MEMORY, "")
-        Preferences.putString(context, Preferences.KEY_PERSONA_MEMORY, "")
-        Preferences.putString(context, Preferences.KEY_ARCHIVAL_MEMORIES, "[]")
-        Preferences.putString(context, Preferences.KEY_DIARIES, "[]")
-        Preferences.putString(context, Preferences.KEY_CHAT_HISTORY, "[]")
-        Preferences.putString(context, Preferences.KEY_CBT_WEEK, "-1")
-        Preferences.putString(context, Preferences.KEY_VOICE_RATE, "1.0")
-        Preferences.putString(context, Preferences.KEY_VOICE_PITCH, "1.0")
-        Preferences.initialize(context)
-
-        apiKey = ""
-        voiceRate = 1.0f
-        voicePitch = 0.9f
-        
+        viewModel.resetAllData()
         Toast.makeText(context, "All application data has been reset.", Toast.LENGTH_SHORT).show()
         onUpdate()
     }
 
     val handleLoadMockData = {
-        val mockDiaries = """[
-          {
-            "date": "2026-06-22",
-            "bed_time": "23:00",
-            "light_out_time": "23:15",
-            "latency_mins": 45,
-            "awakenings": 2,
-            "awake_mins": 40,
-            "wake_time": "06:30",
-            "out_of_bed_time": "06:45",
-            "quality": 2,
-            "alertness": 3,
-            "medications": "None",
-            "notes": "Had a hard time shutting my mind off. Woke up feeling tired."
-          },
-          {
-            "date": "2026-06-23",
-            "bed_time": "23:00",
-            "light_out_time": "23:30",
-            "latency_mins": 50,
-            "awakenings": 3,
-            "awake_mins": 35,
-            "wake_time": "06:15",
-            "out_of_bed_time": "06:30",
-            "quality": 2,
-            "alertness": 2,
-            "medications": "None",
-            "notes": "Felt frustrated lying in bed. NST: I will never get to sleep."
-          },
-          {
-            "date": "2026-06-24",
-            "bed_time": "22:45",
-            "light_out_time": "23:00",
-            "latency_mins": 30,
-            "awakenings": 1,
-            "awake_mins": 20,
-            "wake_time": "06:00",
-            "out_of_bed_time": "06:15",
-            "quality": 3,
-            "alertness": 4,
-            "medications": "None",
-            "notes": "Slightly better. Still woke up in the middle of the night."
-          },
-          {
-            "date": "2026-06-25",
-            "bed_time": "23:30",
-            "light_out_time": "23:45",
-            "latency_mins": 60,
-            "awakenings": 2,
-            "awake_mins": 50,
-            "wake_time": "06:45",
-            "out_of_bed_time": "07:00",
-            "quality": 1,
-            "alertness": 2,
-            "medications": "None",
-            "notes": "Awful night. Stressed about work tomorrow."
-          },
-          {
-            "date": "2026-06-26",
-            "bed_time": "23:00",
-            "light_out_time": "23:15",
-            "latency_mins": 40,
-            "awakenings": 2,
-            "awake_mins": 30,
-            "wake_time": "06:30",
-            "out_of_bed_time": "06:45",
-            "quality": 3,
-            "alertness": 3,
-            "medications": "None",
-            "notes": "Average sleep, felt a bit sleepy in afternoon."
-          },
-          {
-            "date": "2026-06-27",
-            "bed_time": "22:30",
-            "light_out_time": "23:00",
-            "latency_mins": 55,
-            "awakenings": 3,
-            "awake_mins": 45,
-            "wake_time": "07:00",
-            "out_of_bed_time": "07:30",
-            "quality": 2,
-            "alertness": 2,
-            "medications": "None",
-            "notes": "Stayed in bed too long trying to sleep. Felt groggy."
-          },
-          {
-            "date": "2026-06-28",
-            "bed_time": "23:00",
-            "light_out_time": "23:15",
-            "latency_mins": 35,
-            "awakenings": 2,
-            "awake_mins": 25,
-            "wake_time": "06:30",
-            "out_of_bed_time": "06:45",
-            "quality": 3,
-            "alertness": 3,
-            "medications": "None",
-            "notes": "Logging baseline complete. Sleep efficiency calculated around 79%."
-          }
-        ]"""
-
-        Preferences.putString(context, Preferences.KEY_DIARIES, mockDiaries)
-        Preferences.putString(context, Preferences.KEY_CBT_WEEK, "0")
-
-        val humanJson = Preferences.getString(context, Preferences.KEY_HUMAN_MEMORY, "{}")
-        val human = gson.fromJson(humanJson, JsonObject::class.java) ?: JsonObject()
-        val mockProgress = JsonObject().apply {
-            addProperty("current_week", 0)
-            addProperty("current_week_description", "Baseline Logging completed (Ready for Week 1)")
-            addProperty("sleep_window", "Not set")
-            addProperty("average_sleep_duration", 320)
-            addProperty("average_sleep_efficiency", 78.5)
+        viewModel.loadMockData {
+            Toast.makeText(context, "Mock baseline data successfully generated!", Toast.LENGTH_SHORT).show()
+            onUpdate()
         }
-        human.add("cbt_progress", mockProgress)
-        Preferences.putString(context, Preferences.KEY_HUMAN_MEMORY, gson.toJson(human))
-
-        Toast.makeText(context, "Mock baseline data successfully generated!", Toast.LENGTH_SHORT).show()
-        onUpdate()
     }
 
     Column(
