@@ -135,10 +135,20 @@ The user is 53 years old. You will guide them through these phases:
             val humanMem = memoryRepo.getHumanMemory()
             val personaMem = memoryRepo.getPersonaMemory()
             val sleepStats = diaryRepo.calculateStats().toJsonString()
-            val systemPrompt = SYSTEM_PROMPT_TEMPLATE
+            val todayStr = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+            val hasLoggedToday = diaryRepo.getDiaryForDate(todayStr) != null
+            val dynamicInstruction = if (hasLoggedToday) {
+                "SYSTEM STATUS: The user has ALREADY logged their sleep diary for last night (today's entry $todayStr is present). DO NOT ask them to report or log sleep again. Focus purely on coaching, encouragement, or CBT-I advice."
+            } else {
+                "SYSTEM STATUS: The user has NOT logged their sleep diary for last night ($todayStr) yet. Warmly and politely ask them how they slept so we can get it logged."
+            }
+
+            val basePrompt = SYSTEM_PROMPT_TEMPLATE
                 .replace("{human_mem}", humanMem)
                 .replace("{persona_mem}", personaMem)
                 .replace("{sleep_stats}", sleepStats)
+
+            val systemPrompt = "$basePrompt\n\n$dynamicInstruction"
 
             val messages = JsonArray().apply {
                 add(JsonObject().apply {
